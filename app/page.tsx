@@ -209,6 +209,10 @@ export default function LandingPage() {
 
   // File Picker Click
   const handleUploadClick = () => {
+    if (!userSignedIn) {
+      setShowOauthModal(true);
+      return;
+    }
     fileInputRef.current?.click();
   };
 
@@ -310,6 +314,11 @@ export default function LandingPage() {
 
   // Submit Text for Analysis
   const handleAnalyze = async () => {
+    if (!userSignedIn) {
+      setShowOauthModal(true);
+      return;
+    }
+
     if (pastedText.trim().length < 30) {
       alert("Document text kam se kam 30 characters ka hona chahiye.");
       return;
@@ -451,6 +460,52 @@ export default function LandingPage() {
         <p className="hero-subtext">
           Court notice, bank policy, medical report, salary slip — paste karo, aur plain Hindi ya English mein poora matlab samjho. Lawyers ki zaroorat nahi.
         </p>
+
+        {!userSignedIn && (
+          <div style={{ marginTop: '24px', display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowOauthModal(true)}
+              style={{
+                background: 'var(--saffron)',
+                color: '#fff',
+                border: 'none',
+                padding: '12px 28px',
+                borderRadius: '30px',
+                fontSize: '15px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(255, 107, 0, 0.3)',
+                transition: 'transform 0.2s ease',
+              }}
+            >
+              🚀 Get Started Free
+            </button>
+            <button
+              onClick={() => setShowOauthModal(true)}
+              style={{
+                background: '#fff',
+                color: 'var(--ink)',
+                border: '1px solid var(--border)',
+                padding: '12px 24px',
+                borderRadius: '30px',
+                fontSize: '15px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <svg viewBox="0 0 48 48" style={{ width: '18px', height: '18px' }}>
+                <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.1 29.3 35 24 35c-6.1 0-11-4.9-11-11s4.9-11 11-11c2.8 0 5.3 1 7.3 2.7l6-6C33.9 6.5 29.2 4.5 24 4.5 12.7 4.5 3.5 13.7 3.5 25S12.7 45.5 24 45.5 44.5 36.3 44.5 25c0-1.6-.2-3.1-.9-4.5z"/>
+                <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c2.8 0 5.3 1 7.3 2.7l6-6C33.9 6.5 29.2 4.5 24 4.5c-7.7 0-14.3 4.4-17.7 10.2z"/>
+                <path fill="#4CAF50" d="M24 45.5c5.1 0 9.8-1.9 13.4-5.1l-6.2-5.2c-1.9 1.3-4.4 2.1-7.2 2.1-5.3 0-9.7-2.9-11.3-7l-6.6 5.1C9.6 41 16.2 45.5 24 45.5z"/>
+                <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4-4.1 5.3l6.2 5.2c3.6-3.3 5.9-8.3 5.9-13.5 0-1.6-.2-3.1-.7-4.5z"/>
+              </svg>
+              Sign in with Google
+            </button>
+          </div>
+        )}
       </section>
 
       {/* 3. Document-type Chip Row */}
