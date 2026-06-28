@@ -44,7 +44,7 @@ export async function connectToDatabase(): Promise<'mongodb' | 'local'> {
   if (isConnected) return 'mongodb';
 
   try {
-    await mongoose.connect(uri);
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
     isConnected = true;
     return 'mongodb';
   } catch (error) {
