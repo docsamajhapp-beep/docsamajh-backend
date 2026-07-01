@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 interface AnalysisSection {
   label: string;
@@ -116,70 +117,71 @@ export default function LandingPage() {
   const [userEmail, setUserEmail] = useState('abhishek.sharma@gmail.com');
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
 
-  // Load from localStorage safely on mount
+  // Load session from Supabase on mount
   useEffect(() => {
-    const isPrem = localStorage.getItem('docsamajh_premium') === 'true';
-    setIsPremiumUser(isPrem);
-    const count = parseInt(localStorage.getItem('docsamajh_analyses_count') || '0', 10);
-    setAnalysesCount(count);
-    const isSigned = localStorage.getItem('docsamajh_signed_in') === 'true';
-    setUserSignedIn(isSigned);
-    const savedName = localStorage.getItem('docsamajh_user_name');
-    if (savedName) setUserName(savedName);
-    const savedEmail = localStorage.getItem('docsamajh_user_email');
-    if (savedEmail) setUserEmail(savedEmail);
+    // Check existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUserSignedIn(true);
+        setUserName(session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User');
+        setUserEmail(session.user.email || '');
+        const isPrem = localStorage.getItem('docsamajh_premium') === 'true';
+        setIsPremiumUser(isPrem);
+        const count = parseInt(localStorage.getItem('docsamajh_analyses_count') || '0', 10);
+        setAnalysesCount(count);
+      }
+    });
+
+    // Listen for auth state changes (handles OAuth redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        setUserSignedIn(true);
+        setUserName(session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User');
+        setUserEmail(session.user.email || '');
+        setShowOauthModal(false);
+        setOauthLoading(false);
+        localStorage.setItem('docsamajh_signed_in', 'true');
+        localStorage.setItem('docsamajh_user_name', session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User');
+        localStorage.setItem('docsamajh_user_email', session.user.email || '');
+      } else if (event === 'SIGNED_OUT') {
+        setUserSignedIn(false);
+        setUserName('');
+        setUserEmail('');
+        setIsPremiumUser(false);
+        localStorage.removeItem('docsamajh_signed_in');
+        localStorage.removeItem('docsamajh_user_name');
+        localStorage.removeItem('docsamajh_user_email');
+        localStorage.removeItem('docsamajh_premium');
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const handleOauthLogin = async (name: string, email: string) => {
+  // Real Google OAuth via Supabase
+  const handleGoogleSignIn = async () => {
     setOauthLoading(true);
     try {
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name }),
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
       });
-      const data = await res.json();
-      setOauthLoading(false);
-      setShowOauthModal(false);
-      
-      if (res.ok && data && data.name) {
-        setUserSignedIn(true);
-        setUserName(data.name);
-        setUserEmail(data.email);
-        setIsPremiumUser(data.plan !== 'free');
-        localStorage.setItem('docsamajh_signed_in', 'true');
-        localStorage.setItem('docsamajh_user_name', data.name);
-        localStorage.setItem('docsamajh_user_email', data.email);
-        localStorage.setItem('docsamajh_jwt_token', data.jwtToken || 'mock_jwt_token');
-        localStorage.setItem('docsamajh_premium', data.plan !== 'free' ? 'true' : 'false');
-      } else {
-        // Fallback for seamless UX if backend route is unreachable
-        setUserSignedIn(true);
-        setUserName(name);
-        setUserEmail(email);
-        setIsPremiumUser(false);
-        localStorage.setItem('docsamajh_signed_in', 'true');
-        localStorage.setItem('docsamajh_user_name', name);
-        localStorage.setItem('docsamajh_user_email', email);
-        localStorage.setItem('docsamajh_premium', 'false');
+      if (error) {
+        console.error('Google sign-in error:', error.message);
+        alert('Sign-in failed: ' + error.message);
+        setOauthLoading(false);
       }
+      // Redirect happens automatically — onAuthStateChange handles the rest
     } catch (err) {
-      console.error('Login error:', err);
+      console.error('OAuth error:', err);
       setOauthLoading(false);
-      setShowOauthModal(false);
-      // Fallback
-      setUserSignedIn(true);
-      setUserName(name);
-      setUserEmail(email);
-      setIsPremiumUser(false);
-      localStorage.setItem('docsamajh_signed_in', 'true');
-      localStorage.setItem('docsamajh_user_name', name);
-      localStorage.setItem('docsamajh_user_email', email);
-      localStorage.setItem('docsamajh_premium', 'false');
     }
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
     setUserSignedIn(false);
     setIsPremiumUser(false);
     localStorage.removeItem('docsamajh_signed_in');
@@ -764,10 +766,10 @@ export default function LandingPage() {
         </p>
       </footer>
 
-      {/* Google OAuth Simulation Modal */}
+      {/* Google OAuth Modal */}
       {showOauthModal && (
-        <div className="oauth-overlay">
-          <div className="oauth-modal">
+        <div className="oauth-overlay" onClick={() => { setShowOauthModal(false); setOauthLoading(false); }}>
+          <div className="oauth-modal" onClick={(e) => e.stopPropagation()}>
             {!oauthLoading ? (
               <>
                 <div className="google-logo-wrap">
@@ -778,46 +780,51 @@ export default function LandingPage() {
                     <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.33-5.68c-2.11 1.42-4.8 2.3-8.56 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                   </svg>
                 </div>
-                <h3 className="oauth-title">Sign in with Google</h3>
-                <p className="oauth-subtitle">to continue to DocSamajh</p>
+                <h3 className="oauth-title">Sign in to DocSamajh</h3>
+                <p className="oauth-subtitle">Use your Google account to get started</p>
 
-                <div className="oauth-account-list">
-                  <button className="oauth-account-item" onClick={() => handleOauthLogin('Abhishek Sharma', 'abhishek.sharma@gmail.com')}>
-                    <img className="oauth-avatar" src="https://i.pravatar.cc/40?img=12" alt="Abhishek" />
-                    <div className="oauth-account-info">
-                      <span className="oauth-account-name">Abhishek Sharma</span>
-                      <span className="oauth-account-email">abhishek.sharma@gmail.com</span>
-                    </div>
-                  </button>
+                <button
+                  onClick={handleGoogleSignIn}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    width: '100%',
+                    padding: '12px 20px',
+                    marginTop: '20px',
+                    background: '#fff',
+                    border: '1px solid #dadce0',
+                    borderRadius: '8px',
+                    fontSize: '15px',
+                    fontWeight: '500',
+                    color: '#3c4043',
+                    cursor: 'pointer',
+                    transition: 'box-shadow 0.2s ease',
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.boxShadow = '0 1px 3px rgba(60,64,67,0.3)')}
+                  onMouseOut={(e) => (e.currentTarget.style.boxShadow = 'none')}
+                >
+                  <svg viewBox="0 0 48 48" style={{ width: '20px', height: '20px' }}>
+                    <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.1 29.3 35 24 35c-6.1 0-11-4.9-11-11s4.9-11 11-11c2.8 0 5.3 1 7.3 2.7l6-6C33.9 6.5 29.2 4.5 24 4.5 12.7 4.5 3.5 13.7 3.5 25S12.7 45.5 24 45.5 44.5 36.3 44.5 25c0-1.6-.2-3.1-.9-4.5z"/>
+                    <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c2.8 0 5.3 1 7.3 2.7l6-6C33.9 6.5 29.2 4.5 24 4.5c-7.7 0-14.3 4.4-17.7 10.2z"/>
+                    <path fill="#4CAF50" d="M24 45.5c5.1 0 9.8-1.9 13.4-5.1l-6.2-5.2c-1.9 1.3-4.4 2.1-7.2 2.1-5.3 0-9.7-2.9-11.3-7l-6.6 5.1C9.6 41 16.2 45.5 24 45.5z"/>
+                    <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4-4.1 5.3l6.2 5.2c3.6-3.3 5.9-8.3 5.9-13.5 0-1.6-.2-3.1-.7-4.5z"/>
+                  </svg>
+                  Continue with Google
+                </button>
 
-                  <button className="oauth-account-item" onClick={() => handleOauthLogin('Karan Verma', 'karan.verma@gmail.com')}>
-                    <img className="oauth-avatar" src="https://i.pravatar.cc/40?img=33" alt="Karan" />
-                    <div className="oauth-account-info">
-                      <span className="oauth-account-name">Karan Verma</span>
-                      <span className="oauth-account-email">karan.verma@gmail.com</span>
-                    </div>
-                  </button>
-
-                  <button className="oauth-account-item" onClick={() => handleOauthLogin('Guest User', 'guest.user@docsamajh.in')}>
-                    <div className="oauth-avatar-placeholder">👤</div>
-                    <div className="oauth-account-info">
-                      <span className="oauth-account-name">Guest User</span>
-                      <span className="oauth-account-email">guest.user@docsamajh.in</span>
-                    </div>
-                  </button>
-                </div>
-
-                <p className="oauth-footer" style={{ textAlign: 'left', fontSize: '11px', color: '#70757a' }}>
-                  To create a secure account, Google OAuth credentials validation is in sandbox phase. Selecting an account above simulates Google Authentication.
+                <p style={{ textAlign: 'center', fontSize: '11px', color: '#70757a', marginTop: '16px' }}>
+                  By continuing, you agree to DocSamajh&apos;s Terms of Service and Privacy Policy.
                 </p>
-                <div style={{ marginTop: '20px', textAlign: 'right' }}>
+                <div style={{ marginTop: '12px', textAlign: 'right' }}>
                   <button onClick={() => setShowOauthModal(false)} style={{ background: 'none', border: 'none', color: '#1a73e8', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }}>Cancel</button>
                 </div>
               </>
             ) : (
               <div className="oauth-loading-container">
                 <div className="oauth-spinner"></div>
-                <div className="oauth-loading-text">Signing in with Google OAuth...</div>
+                <div className="oauth-loading-text">Redirecting to Google...</div>
               </div>
             )}
           </div>
